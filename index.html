@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Mood Swarm Scam Detector</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      text-align: center;
+      background: #f5f5f5;
+      padding: 20px;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 15px;
+      padding: 30px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #2c3e50;
+      margin-bottom: 10px;
+    }
+    #result {
+      font-size: 4rem;
+      margin: 25px 0;
+      transition: all 0.5s;
+    }
+    .safe { color: #27ae60; }
+    .scam { 
+      color: #e74c3c; 
+      animation: alert 1s infinite;
+    }
+    @keyframes alert {
+      50% { opacity: 0.6; }
+    }
+    button {
+      background: #3498db;
+      color: white;
+      border: none;
+      padding: 15px 30px;
+      font-size: 1.2rem;
+      border-radius: 50px;
+      cursor: pointer;
+      margin: 20px 0;
+      transition: all 0.3s;
+    }
+    button:hover { background: #2980b9; }
+    button:active { transform: scale(0.98); }
+    .footer {
+      margin-top: 30px;
+      color: #7f8c8d;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>MOOD SWARM SCAM DETECTOR</h1>
+    <p>Protecting elders from voice scams using emotion AI</p>
+    
+    <button id="start">START DETECTION</button>
+    <div id="result" class="safe">READY</div>
+    
+    <p id="instruction">Click START and speak a phrase</p>
+    <p class="footer">Built for MIT Admissions • moodswarm.netlify.app</p>
+  </div>
+
+  <script src="moodswarm.js"></script>
+</body>
+</html>
