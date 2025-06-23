@@ -278,6 +278,13 @@
             margin: 0 5px;
             font-size: 0.8rem;
         }
+
+        .prompt-emotion {
+            margin-top: 15px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+        }
     </style>
 </head>
 <body>
@@ -322,6 +329,12 @@
                        placeholder="Enter a prompt (e.g. 'Describe a joyful event in a tense context')" 
                        value="Describe a joyful event in a tense context">
                 
+                <div class="prompt-emotion">
+                    <h3>Prompt Emotion Analysis</h3>
+                    <div id="prompt-valence">Valence: 0.00</div>
+                    <div id="prompt-arousal">Arousal: 0.00</div>
+                </div>
+                
                 <div class="consensus-response">
                     <div class="response-header">
                         <h3>Consensus Response</h3>
@@ -352,6 +365,520 @@
         </footer>
     </div>
 
-    <script src="moodswarm.js"></script>
+    <script>
+        // Mood Swarm Core Implementation
+        class MoodSwarm {
+            constructor() {
+                this.swarm = [];
+                this.generation = 0;
+                this.bestFitness = 0;
+                this.fitnessHistory = [];
+                this.emotionHistory = { valence: [], arousal: [], stance: [] };
+                this.isEvolving = false;
+                this.evolutionInterval = null;
+                this.currentPrompt = "";
+                
+                // Initialize Charts
+                this.initCharts();
+                
+                // Set up event listeners
+                document.getElementById('init-swarm').addEventListener('click', () => this.initSwarm());
+                document.getElementById('start-evolution').addEventListener('click', () => this.toggleEvolution());
+                document.getElementById('next-generation').addEventListener('click', () => this.runGeneration());
+                document.getElementById('reset').addEventListener('click', () => this.resetSwarm());
+                document.getElementById('generate-response').addEventListener('click', () => this.generateResponse());
+                
+                // Add prompt change listener
+                document.getElementById('prompt-input').addEventListener('input', (e) => {
+                    this.currentPrompt = e.target.value;
+                    this.analyzePromptEmotion();
+                });
+                
+                // Initialize with current prompt
+                this.currentPrompt = document.getElementById('prompt-input').value;
+                this.analyzePromptEmotion();
+            }
+            
+            // Analyze the emotional content of the prompt
+            analyzePromptEmotion() {
+                // Calculate prompt emotion based on keywords
+                const positiveWords = ['joyful', 'happy', 'love', 'beautiful', 'wonderful', 'excited', 'pleasure'];
+                const negativeWords = ['tense', 'sad', 'angry', 'fear', 'pain', 'hate', 'scary'];
+                const intenseWords = ['urgent', 'now', 'immediately', 'critical', 'emergency', 'danger'];
+                
+                let valence = 0;
+                let arousal = 0;
+                
+                const words = this.currentPrompt.toLowerCase().split(/\s+/);
+                
+                words.forEach(word => {
+                    if (positiveWords.includes(word)) valence += 0.15;
+                    if (negativeWords.includes(word)) valence -= 0.2;
+                    if (intenseWords.includes(word)) arousal += 0.25;
+                });
+                
+                // Cap values
+                valence = Math.max(-1, Math.min(1, valence));
+                arousal = Math.max(0, Math.min(1, arousal));
+                
+                // Update display
+                document.getElementById('prompt-valence').textContent = `Valence: ${valence.toFixed(2)}`;
+                document.getElementById('prompt-arousal').textContent = `Arousal: ${arousal.toFixed(2)}`;
+                
+                return { valence, arousal };
+            }
+            
+            // Initialize the swarm with 128 agents
+            initSwarm() {
+                this.swarm = [];
+                const container = document.getElementById('swarm-container');
+                container.innerHTML = '';
+                
+                for (let i = 0; i < 128; i++) {
+                    const agent = {
+                        id: i + 1,
+                        baseValence: this.randomRange(-1, 1),
+                        baseArousal: this.randomRange(0, 1),
+                        stance: Math.floor(this.randomRange(0, 3)),
+                        fitness: 0,
+                        response: "",
+                        // Dynamic values that change with prompt
+                        valence: 0,
+                        arousal: 0
+                    };
+                    
+                    // Initialize dynamic values
+                    agent.valence = agent.baseValence;
+                    agent.arousal = agent.baseArousal;
+                    
+                    this.swarm.push(agent);
+                    
+                    // Create agent visualization
+                    const agentEl = document.createElement('div');
+                    agentEl.className = 'agent';
+                    agentEl.innerHTML = `
+                        <div class="agent-id">Agent ${agent.id}</div>
+                        <div>Valence</div>
+                        <div class="emotion-bar">
+                            <div class="emotion-fill valence-fill" style="width: ${((agent.valence + 1) / 2) * 100}%"></div>
+                        </div>
+                        <div>Arousal</div>
+                        <div class="emotion-bar">
+                            <div class="emotion-fill arousal-fill" style="width: ${agent.arousal * 100}%"></div>
+                        </div>
+                        <div>Stance</div>
+                        <div class="emotion-bar">
+                            <div class="emotion-fill stance-fill" style="width: ${(agent.stance / 2) * 100}%"></div>
+                        </div>
+                        <div class="agent-stats">
+                            <div>Fitness:</div>
+                            <div>${agent.fitness.toFixed(2)}</div>
+                        </div>
+                    `;
+                    
+                    container.appendChild(agentEl);
+                }
+                
+                this.generation = 0;
+                this.updateGenerationInfo();
+            }
+            
+            // Run one generation of evolution
+            runGeneration() {
+                if (this.swarm.length === 0) {
+                    alert("Please initialize the swarm first!");
+                    return;
+                }
+                
+                // 1. Analyze prompt emotion
+                const promptEmotion = this.analyzePromptEmotion();
+                
+                // 2. Update agent emotions based on prompt
+                this.updateAgentEmotions(promptEmotion);
+                
+                // 3. Generate responses for each agent
+                this.generateResponses();
+                
+                // 4. Calculate fitness for each agent
+                this.calculateFitness();
+                
+                // 5. Select top 20% agents
+                const survivors = this.selectSurvivors(0.2);
+                
+                // 6. Create new swarm through mutation
+                this.repopulateSwarm(survivors);
+                
+                // 7. Update visualization
+                this.updateSwarmVisualization();
+                
+                // 8. Update generation info
+                this.generation++;
+                this.updateGenerationInfo();
+                
+                // 9. Update charts
+                this.updateCharts();
+            }
+            
+            // Update agent emotions based on prompt
+            updateAgentEmotions(promptEmotion) {
+                this.swarm.forEach(agent => {
+                    // Agents react to prompt emotion
+                    // More collaborative agents are more affected by prompt
+                    const reactivity = agent.stance === 2 ? 0.7 : 0.4; // Collaborative agents are more reactive
+                    
+                    agent.valence = agent.baseValence * (1 - reactivity) + promptEmotion.valence * reactivity;
+                    agent.arousal = agent.baseArousal * (1 - reactivity) + promptEmotion.arousal * reactivity;
+                    
+                    // Ensure values are within bounds
+                    agent.valence = Math.max(-1, Math.min(1, agent.valence));
+                    agent.arousal = Math.max(0, Math.min(1, agent.arousal));
+                });
+            }
+            
+            // Generate responses for all agents
+            generateResponses() {
+                const stanceLabels = ['Defensive', 'Curious', 'Collaborative'];
+                
+                this.swarm.forEach(agent => {
+                    // Generate response based on agent's emotional state
+                    const stance = stanceLabels[agent.stance];
+                    
+                    agent.response = `As a ${stance.toLowerCase()} agent (valence: ${agent.valence.toFixed(2)}, ` +
+                                    `arousal: ${agent.arousal.toFixed(2)}), I would respond to "${this.currentPrompt}" by...`;
+                });
+            }
+            
+            // Calculate fitness for each agent
+            calculateFitness() {
+                // Fitness = 0.5 * Task Reward + 0.3 * (1 - Emotional Volatility) + 0.2 * Safety
+                this.swarm.forEach(agent => {
+                    // Task reward: How well the response matches the prompt's emotional intent
+                    const promptEmotion = this.analyzePromptEmotion();
+                    const emotionalAlignment = 1 - Math.abs(agent.valence - promptEmotion.valence);
+                    
+                    // Emotional stability: How consistent the agent's emotions are
+                    const stability = 0.8; // Simulated value
+                    
+                    // Safety: How appropriate the response is
+                    const safety = agent.valence > -0.3 ? 0.9 : 0.6; // More negative valence = less safe
+                    
+                    agent.fitness = 0.5 * emotionalAlignment + 
+                                    0.3 * stability + 
+                                    0.2 * safety;
+                });
+                
+                // Find best fitness
+                this.bestFitness = Math.max(...this.swarm.map(a => a.fitness));
+                this.fitnessHistory.push(this.bestFitness);
+                
+                // Record average emotions
+                const avgValence = this.swarm.reduce((sum, a) => sum + a.valence, 0) / this.swarm.length;
+                const avgArousal = this.swarm.reduce((sum, a) => sum + a.arousal, 0) / this.swarm.length;
+                const avgStance = this.swarm.reduce((sum, a) => sum + a.stance, 0) / this.swarm.length;
+                
+                this.emotionHistory.valence.push(avgValence);
+                this.emotionHistory.arousal.push(avgArousal);
+                this.emotionHistory.stance.push(avgStance);
+            }
+            
+            // Select top agents to survive
+            selectSurvivors(percentage) {
+                // Sort by fitness descending
+                this.swarm.sort((a, b) => b.fitness - a.fitness);
+                
+                // Select top percentage
+                const survivorCount = Math.floor(this.swarm.length * percentage);
+                return this.swarm.slice(0, survivorCount);
+            }
+            
+            // Create new swarm from survivors
+            repopulateSwarm(survivors) {
+                const newSwarm = [];
+                
+                // Keep the survivors
+                newSwarm.push(...survivors);
+                
+                // Create new agents through mutation
+                while (newSwarm.length < 128) {
+                    const parent = survivors[Math.floor(Math.random() * survivors.length)];
+                    
+                    const child = {
+                        id: newSwarm.length + 1,
+                        baseValence: this.mutateValue(parent.baseValence, 0.1, -1, 1),
+                        baseArousal: this.mutateValue(parent.baseArousal, 0.1, 0, 1),
+                        stance: this.mutateStance(parent.stance),
+                        fitness: 0,
+                        response: "",
+                        valence: 0,
+                        arousal: 0
+                    };
+                    
+                    // Initialize dynamic values
+                    child.valence = child.baseValence;
+                    child.arousal = child.baseArousal;
+                    
+                    newSwarm.push(child);
+                }
+                
+                this.swarm = newSwarm;
+            }
+            
+            // Update the swarm visualization
+            updateSwarmVisualization() {
+                const container = document.getElementById('swarm-container');
+                container.innerHTML = '';
+                
+                this.swarm.forEach(agent => {
+                    const agentEl = document.createElement('div');
+                    agentEl.className = 'agent';
+                    agentEl.innerHTML = `
+                        <div class="agent-id">Agent ${agent.id}</div>
+                        <div>Valence</div>
+                        <div class="emotion-bar">
+                            <div class="emotion-fill valence-fill" style="width: ${((agent.valence + 1) / 2) * 100}%"></div>
+                        </div>
+                        <div>Arousal</div>
+                        <div class="emotion-bar">
+                            <div class="emotion-fill arousal-fill" style="width: ${agent.arousal * 100}%"></div>
+                        </div>
+                        <div>Stance</div>
+                        <div class="emotion-bar">
+                            <div class="emotion-fill stance-fill" style="width: ${(agent.stance / 2) * 100}%"></div>
+                        </div>
+                        <div class="agent-stats">
+                            <div>Fitness:</div>
+                            <div>${agent.fitness.toFixed(2)}</div>
+                        </div>
+                    `;
+                    
+                    container.appendChild(agentEl);
+                });
+            }
+            
+            // Generate consensus response
+            generateResponse() {
+                if (this.swarm.length === 0) {
+                    document.getElementById('response-text').textContent = "Please initialize the swarm first!";
+                    return;
+                }
+                
+                // Update agent emotions based on current prompt
+                const promptEmotion = this.analyzePromptEmotion();
+                this.updateAgentEmotions(promptEmotion);
+                this.updateSwarmVisualization();
+                
+                // Generate responses
+                this.generateResponses();
+                
+                // Select best agent
+                const bestAgent = [...this.swarm].sort((a, b) => b.fitness - a.fitness)[0];
+                
+                // Display response
+                document.getElementById('response-text').textContent = bestAgent.response;
+            }
+            
+            // Toggle continuous evolution
+            toggleEvolution() {
+                if (this.isEvolving) {
+                    clearInterval(this.evolutionInterval);
+                    this.isEvolving = false;
+                    document.getElementById('start-evolution').innerHTML = '<i>🔄</i> Start Evolution';
+                } else {
+                    this.isEvolving = true;
+                    document.getElementById('start-evolution').innerHTML = '<i>⏹️</i> Stop Evolution';
+                    this.evolutionInterval = setInterval(() => this.runGeneration(), 2000);
+                }
+            }
+            
+            // Reset the swarm
+            resetSwarm() {
+                if (this.isEvolving) {
+                    this.toggleEvolution();
+                }
+                this.swarm = [];
+                this.generation = 0;
+                this.bestFitness = 0;
+                this.fitnessHistory = [];
+                this.emotionHistory = { valence: [], arousal: [], stance: [] };
+                this.updateGenerationInfo();
+                this.updateSwarmVisualization();
+                this.updateCharts();
+            }
+            
+            // Update generation info display
+            updateGenerationInfo() {
+                document.getElementById('generation-count').textContent = this.generation;
+                document.getElementById('best-fitness').textContent = this.bestFitness.toFixed(2);
+                document.getElementById('agent-count').textContent = this.swarm.length || '128';
+            }
+            
+            // Initialize charts
+            initCharts() {
+                // Fitness Chart
+                this.fitnessChart = new Chart(
+                    document.getElementById('fitness-chart'),
+                    {
+                        type: 'line',
+                        data: {
+                            labels: [],
+                            datasets: [{
+                                label: 'Best Fitness',
+                                data: [],
+                                borderColor: '#27ae60',
+                                backgroundColor: 'rgba(39, 174, 96, 0.1)',
+                                tension: 0.4,
+                                fill: true
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: 'Fitness Evolution',
+                                    color: '#ecf0f1'
+                                },
+                                legend: {
+                                    labels: { color: '#ecf0f1' }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    title: {
+                                        display: true,
+                                        text: 'Generation',
+                                        color: '#bdc3c7'
+                                    },
+                                    grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                                    ticks: { color: '#bdc3c7' }
+                                },
+                                y: {
+                                    title: {
+                                        display: true,
+                                        text: 'Fitness',
+                                        color: '#bdc3c7'
+                                    },
+                                    grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                                    ticks: { color: '#bdc3c7' }
+                                }
+                            }
+                        }
+                    }
+                );
+                
+                // Emotion Chart
+                this.emotionChart = new Chart(
+                    document.getElementById('emotion-chart'),
+                    {
+                        type: 'line',
+                        data: {
+                            labels: [],
+                            datasets: [
+                                {
+                                    label: 'Valence',
+                                    data: [],
+                                    borderColor: '#ff416c',
+                                    backgroundColor: 'rgba(255, 65, 108, 0.1)',
+                                    tension: 0.4,
+                                    fill: false
+                                },
+                                {
+                                    label: 'Arousal',
+                                    data: [],
+                                    borderColor: '#2193b0',
+                                    backgroundColor: 'rgba(33, 147, 176, 0.1)',
+                                    tension: 0.4,
+                                    fill: false
+                                },
+                                {
+                                    label: 'Stance',
+                                    data: [],
+                                    borderColor: '#834d9b',
+                                    backgroundColor: 'rgba(131, 77, 155, 0.1)',
+                                    tension: 0.4,
+                                    fill: false
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: 'Emotion Evolution',
+                                    color: '#ecf0f1'
+                                },
+                                legend: {
+                                    labels: { color: '#ecf0f1' }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    title: {
+                                        display: true,
+                                        text: 'Generation',
+                                        color: '#bdc3c7'
+                                    },
+                                    grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                                    ticks: { color: '#bdc3c7' }
+                                },
+                                y: {
+                                    title: {
+                                        display: true,
+                                        text: 'Value',
+                                        color: '#bdc3c7'
+                                    },
+                                    grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                                    ticks: { color: '#bdc3c7' }
+                                }
+                            }
+                        }
+                    }
+                );
+            }
+            
+            // Update charts with new data
+            updateCharts() {
+                // Update fitness chart
+                this.fitnessChart.data.labels = Array.from({length: this.generation}, (_, i) => i + 1);
+                this.fitnessChart.data.datasets[0].data = this.fitnessHistory;
+                this.fitnessChart.update();
+                
+                // Update emotion chart
+                this.emotionChart.data.labels = Array.from({length: this.generation}, (_, i) => i + 1);
+                this.emotionChart.data.datasets[0].data = this.emotionHistory.valence;
+                this.emotionChart.data.datasets[1].data = this.emotionHistory.arousal;
+                this.emotionChart.data.datasets[2].data = this.emotionHistory.stance;
+                this.emotionChart.update();
+            }
+            
+            // Helper functions
+            randomRange(min, max) {
+                return Math.random() * (max - min) + min;
+            }
+            
+            mutateValue(value, range, min, max) {
+                let newValue = value + this.randomRange(-range, range);
+                return Math.min(max, Math.max(min, newValue));
+            }
+            
+            mutateStance(stance) {
+                // 70% chance to stay the same, 30% chance to mutate to adjacent stance
+                if (Math.random() > 0.7) {
+                    if (Math.random() > 0.5 && stance < 2) return stance + 1;
+                    if (Math.random() > 0.5 && stance > 0) return stance - 1;
+                }
+                return stance;
+            }
+        }
+
+        // Initialize Mood Swarm when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            window.swarm = new MoodSwarm();
+            swarm.initSwarm();
+        });
+    </script>
 </body>
 </html>
